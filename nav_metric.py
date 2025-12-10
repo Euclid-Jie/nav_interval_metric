@@ -7,7 +7,7 @@ from pathlib import Path
 try:
     from .utils import generate_trading_date, curve_analysis, drawdown_stats
 except ImportError:
-    from utils import generate_trading_date, curve_analysis, drawdown_stats
+    from utils import generate_trading_date, curve_analysis, drawdown_stats # type: ignore
 import warnings
 
 
@@ -65,7 +65,7 @@ class NavMetric:
             nav: 净值序列
             date: 日期序列
             freq: 净值频率, 'W'表示周度, 'D'表示日度, 默认为None, 自动识别
-            ffillna: 是否对缺失的净值进行前后填充
+            ffillna: 是否对缺失的净值进行前后填充, 谨慎使用填充, 默认False
         仅支持2020年1月1日以后的净值数据, 早于此自动截断
         """
         assert len(nav) == len(date), "净值和日期长度不一致"
@@ -108,29 +108,25 @@ class NavMetric:
         nav_series = pd.Series(self.nav, index=self.date).reindex(
             self.weekly_trade_date if self.freq == "W" else self.trade_date,
         )
-        # 如果有缺失需要提醒
-        if nav_series.isna().sum() > 0:
-            if not self.ffillna:
-                if nav_series.isna().sum() > 0:
-                    if not self.ffillna:
-                        warnings.warn(
-                            f"净值数据存在缺失, 共{nav_series.isna().sum()}个交易日缺失净值, 建议设置ffillna=True进行前后填充",
-                            UserWarning,
-                        )
-                    else:
-                        nav_series = nav_series.ffill()
-                        warnings.warn(
-                            f"净值数据存在缺失, 共{nav_series.isna().sum()}个交易日缺失净值, 已进行前后填充",
-                            UserWarning,
-                        )
+        # 如果有缺失, 且允许填充, 则进行向后填充
+        if nav_series.isna().sum() > 0 and self.ffillna:
+            warnings.warn(
+                f"{self.name} 净值数据存在缺失, 共{nav_series.isna().sum()}个交易日缺失净值, 已进行前后填充",
+                UserWarning,
+            )
+            nav_series = nav_series.ffill()
+
         # 恢复净值序列区间
         nav_series = nav_series[
             (nav_series.index >= self.date[0]) & (nav_series.index <= self.date[-1])
         ]
-        # 如果此时还有缺失: 1)开头缺失 2)没有使用填充, 均应该报错
-        if nav_series.isna().sum() > 0:
-            print(nav_series[nav_series.isna()])
-            raise ValueError("净值数据开头存在缺失, 请检查数据完整性")
+        if self.ffillna:
+            # 如果此时还有缺失, 则为开头缺失无法填充, 需要报错
+            if nav_series.isna().sum() > 0:
+                print(nav_series[nav_series.isna()])
+                raise ValueError(f"{self.name} 净值数据开头存在缺失, 请检查数据完整性")
+        else:
+            nav_series = nav_series.dropna()
         self.nav = nav_series.values
         self.date = nav_series.index.values
         self.begin_date, self.end_date = self.date[0], self.date[-1]
