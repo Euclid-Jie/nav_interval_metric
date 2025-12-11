@@ -7,7 +7,7 @@ from pathlib import Path
 try:
     from .utils import generate_trading_date, curve_analysis, drawdown_stats
 except ImportError:
-    from utils import generate_trading_date, curve_analysis, drawdown_stats # type: ignore
+    from utils import generate_trading_date, curve_analysis, drawdown_stats  # type: ignore
 import warnings
 
 
@@ -17,6 +17,8 @@ class IntervalReturnETC(NamedTuple):
     start_date: np.datetime64
     end_date: np.datetime64
     interval_return: float = np.nan
+    interval_anual_return: float = np.nan
+    interval_annual_vol: float = np.nan
     interval_MDD: float = np.nan
     interval_sharpe: float = np.nan
     interval_karma: float = np.nan
@@ -38,12 +40,16 @@ class IntervalReturnETC(NamedTuple):
     def update(
         self,
         interval_return: float,
-        interval_MDD: float,
+        interval_anual_return: float = np.nan,
+        interval_annual_vol: float = np.nan,
+        interval_MDD: float = np.nan,
         interval_sharpe: float = np.nan,
         interval_karma: float = np.nan,
     ):
         return self._replace(
             interval_return=interval_return,
+            interval_anual_return=interval_anual_return,
+            interval_annual_vol=interval_annual_vol,
             interval_MDD=interval_MDD,
             interval_sharpe=interval_sharpe,
             interval_karma=interval_karma,
@@ -176,6 +182,8 @@ class NavMetric:
                     )
                     interval_item = interval_item.update(
                         interval_return=interval_metric["区间收益率"],
+                        interval_anual_return=interval_metric["年化收益率"],
+                        interval_annual_vol=interval_metric["年化波动率"],
                         interval_MDD=interval_metric["最大回撤"],
                         interval_sharpe=interval_metric["夏普比率"],
                         interval_karma=interval_metric["卡玛比率"],
