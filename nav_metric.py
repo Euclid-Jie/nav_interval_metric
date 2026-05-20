@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Literal, NamedTuple, Optional, Tuple
+from typing import Literal, NamedTuple, Optional
 from numpy.typing import NDArray
 from pathlib import Path
 
@@ -11,28 +11,17 @@ except ImportError:
 import warnings
 
 
-# 后续可以拓展其他指标
 class IntervalReturnETC(NamedTuple):
+    """区间收益相关指标"""
     name: str
     start_date: np.datetime64
     end_date: np.datetime64
     interval_return: float = np.nan
-    interval_anual_return: float = np.nan
+    interval_annual_return: float = np.nan
     interval_annual_vol: float = np.nan
     interval_MDD: float = np.nan
     interval_sharpe: float = np.nan
     interval_karma: float = np.nan
-    """
-    区间收益相关指标
-    params:
-        name: 区间名称
-        start_date: 区间开始日期
-        end_date: 区间结束日期
-        interval_return: 区间收益率
-        interval_MDD: 区间最大回撤
-        interval_sharpe: 区间夏普比率
-        interval_karma: 区间卡玛比率
-    """
 
     def __repr__(self):
         return f"[IntervalReturn] {self.name}({self.start_date} - {self.end_date}) , Rtn = {self.interval_return:.2%}, MDD = {self.interval_MDD:.2%}, Sharpe = {self.interval_sharpe:.2f}, Karma = {self.interval_karma:.2f}"
@@ -40,7 +29,7 @@ class IntervalReturnETC(NamedTuple):
     def update(
         self,
         interval_return: float,
-        interval_anual_return: float = np.nan,
+        interval_annual_return: float = np.nan,
         interval_annual_vol: float = np.nan,
         interval_MDD: float = np.nan,
         interval_sharpe: float = np.nan,
@@ -48,7 +37,7 @@ class IntervalReturnETC(NamedTuple):
     ):
         return self._replace(
             interval_return=interval_return,
-            interval_anual_return=interval_anual_return,
+            interval_annual_return=interval_annual_return,
             interval_annual_vol=interval_annual_vol,
             interval_MDD=interval_MDD,
             interval_sharpe=interval_sharpe,
@@ -90,31 +79,30 @@ class NavMetric:
             self.date[0] - np.timedelta64(10, "D"),
             self.date[-1] + np.timedelta64(5, "D"),
         )
-        # 经过这步后, date和nav已经被重新截断过了
         self.format_nav()
+        self._date_index = {d: i for i, d in enumerate(self.date)}
         self.base_metric_dict = curve_analysis(self.nav, self.date)
 
     def __repr__(self):
         return f"Nav_metric(name={self.name}, freq={self.freq} begin_date={self.begin_date.astype('M8[D]')}, end_date={self.end_date.astype('M8[D]')})"
 
-    def format_nav(self, treshold: float = 0.9):
+    def format_nav(self, threshold: float = 0.9):
         """
         两种情形: 1. 用户指定freq; 2. 用户未指定freq, 自动识别
         自动识别时, 通过净值日期和交易日的重合度来判断
-        当日度净值的完整度大于treshold时, 认为是日, 否则是周
+        当日度净值的完整度大于threshold时, 认为是日, 否则是周
         """
         if self.freq is None:
             span_date = self.trade_date[
                 (self.trade_date >= self.date[0]) & (self.trade_date <= self.date[-1])
             ]
-            if np.intersect1d(self.date, span_date).size / span_date.size >= treshold:
+            if np.intersect1d(self.date, span_date).size / span_date.size >= threshold:
                 self.freq = "D"
             else:
                 self.freq = "W"
         nav_series = pd.Series(self.nav, index=self.date).reindex(
             self.weekly_trade_date if self.freq == "W" else self.trade_date,
         )
-        # 如果有缺失, 且允许填充, 则进行向后填充
         if nav_series.isna().sum() > 0 and self.ffillna:
             warnings.warn(
                 f"{self.name} 净值数据存在缺失, 共{nav_series.isna().sum()}个交易日缺失净值, 已进行前后填充",
@@ -122,12 +110,10 @@ class NavMetric:
             )
             nav_series = nav_series.ffill()
 
-        # 恢复净值序列区间
         nav_series = nav_series[
             (nav_series.index >= self.date[0]) & (nav_series.index <= self.date[-1])
         ]
         if self.ffillna:
-            # 如果此时还有缺失, 则为开头缺失无法填充, 需要报错
             if nav_series.isna().sum() > 0:
                 print(nav_series[nav_series.isna()])
                 raise ValueError(f"{self.name} 净值数据开头存在缺失, 请检查数据完整性")
@@ -137,25 +123,14 @@ class NavMetric:
         self.date = nav_series.index.values
         self.begin_date, self.end_date = self.date[0], self.date[-1]
 
-    def drawdown_info(self) -> Tuple[Optional[NDArray[np.float64]], pd.DataFrame]:
-        """
-        Return (drawdown_series, drawdown_stats_dict). drawdown_series may be None or an ndarray
-        depending on drawdown_stats implementation.
-        """
+    def drawdown_info(self):
         return drawdown_stats(self.nav, self.date)
 
-    # 计算区间收益, 支持多个区间
     def calculate_interval_return(
         self, interval: list[IntervalReturnETC]
     ) -> list[IntervalReturnETC]:
-        """
-        Calculate the interval return for the given intervals.
-        """
         interval_return_list = []
         for interval_item in interval:
-            assert isinstance(
-                interval_item, IntervalReturnETC
-            ), "interval必须是IntervalReturnETC类型"
             if interval_item.start_date >= interval_item.end_date:
                 raise ValueError(
                     f"interval {interval_item.name} 的 start_date 必须早于 end_date"
@@ -163,13 +138,12 @@ class NavMetric:
             if (
                 interval_item.start_date >= self.begin_date
                 and interval_item.end_date <= self.end_date
-                and interval_item.start_date in self.date
-                and interval_item.end_date in self.date
+                and interval_item.start_date in self._date_index
+                and interval_item.end_date in self._date_index
             ):
-                start_idx = np.where(self.date == interval_item.start_date)[0][0]
-                end_idx = np.where(self.date == interval_item.end_date)[0][0]
+                start_idx = self._date_index[interval_item.start_date]
+                end_idx = self._date_index[interval_item.end_date]
                 interval_nav = self.nav[start_idx : end_idx + 1]
-                # 数据不足5条时候, 仅计算区间收益即可
                 if len(interval_nav) <= 5:
                     interval_item = interval_item.update(
                         interval_return=interval_nav[-1] / interval_nav[0] - 1,
@@ -182,7 +156,7 @@ class NavMetric:
                     )
                     interval_item = interval_item.update(
                         interval_return=interval_metric["区间收益率"],
-                        interval_anual_return=interval_metric["年化收益率"],
+                        interval_annual_return=interval_metric["年化收益率"],
                         interval_annual_vol=interval_metric["年化波动率"],
                         interval_MDD=interval_metric["最大回撤"],
                         interval_sharpe=interval_metric["夏普比率"],
@@ -208,17 +182,13 @@ class NavMetric:
             last_day.astype("datetime64[D]") + np.timedelta64(10, "D"),
         )
         recent_month_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][
-                0
-            ]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][0]
         )
         year_begin_day = np.datetime64(
             weekly_trade_date[weekly_trade_date >= last_day.astype("datetime64[Y]")][0]
         )
         recent_year_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][
-                0
-            ]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][0]
         )
         intervals = [
             IntervalReturnETC("recent_week", last_week_day, last_day),
@@ -239,7 +209,6 @@ class NavMetric:
 
 
 if __name__ == "__main__":
-    # Example usage
     nav_data_path = Path(r"data\SAHC74_合骥睿源2000增强1号.csv")
     nav_df = pd.read_csv(nav_data_path)
     nav_df["日期"] = pd.to_datetime(nav_df["日期"])
