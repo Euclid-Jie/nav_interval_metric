@@ -10,12 +10,23 @@ __all__ = [
     "curve_analysis",
 ]
 
+_chinese_special_holiday: Optional[NDArray[np.datetime64]] = None
+
+
+def _load_holidays() -> NDArray[np.datetime64]:
+    global _chinese_special_holiday
+    if _chinese_special_holiday is None:
+        with open(Path(__file__).resolve().parent / "Chinese_special_holiday.txt") as f:
+            _chinese_special_holiday = np.array(
+                [d.strip() for d in f.readlines()], dtype="datetime64[D]"
+            )
+    return _chinese_special_holiday
+
 
 def drawdown_stats(
     nav: np.ndarray, date: np.ndarray
 ) -> Tuple[Optional[NDArray[np.float64]], pd.DataFrame]:
     assert len(nav) == len(date), "nav和date长度不一致, 请检查bench_data是否更新"
-    # 动态回撤
     cummax = np.maximum.accumulate(nav)
     drawdown = (nav - cummax) / cummax
     if drawdown.min() == 0:
@@ -43,8 +54,6 @@ def drawdown_stats(
         drawdown_infos[-1]["drawdown_end_date"] = np.datetime64("NaT")
 
     drawdown_infos = pd.DataFrame(drawdown_infos)
-    for col in ["drawdown_start_date", "max_drawdown_date", "drawdown_end_date"]:
-        drawdown_infos[col] = drawdown_infos[col]
     drawdown_infos["max_drawdown_days"] = (
         drawdown_infos["max_drawdown_date"] - drawdown_infos["drawdown_start_date"]
     )
@@ -73,13 +82,7 @@ def generate_trading_date(
     assert begin_date >= np.datetime64(
         "2015-01-04"
     ), "系统预设起始日期仅支持2015年1月4日以后"
-    with open(
-        Path(__file__).resolve().parent.joinpath("Chinese_special_holiday.txt"), "r"
-    ) as f:
-        # produce a plain numpy ndarray (dtype=datetime64[D]) so it is compatible with np.setdiff1d
-        chinese_special_holiday = np.array(
-            [date.strip() for date in f.readlines()], dtype="datetime64[D]"
-        )
+    chinese_special_holiday = _load_holidays()
     working_date = pd.date_range(begin_date, end_date, freq="B").values.astype(
         "datetime64[D]"
     )
@@ -88,12 +91,13 @@ def generate_trading_date(
     trading_date_df["is_friday"] = trading_date_df["working_date"].apply(
         lambda x: x.weekday() == 4
     )
-    trading_date_df["trading_date"] = (
-        trading_date_df["working_date"]
-        .apply(lambda x: x if x in trading_date else np.nan)
-        .ffill()
+    is_trading = np.isin(working_date, trading_date)
+    trading_date_df["trading_date"] = np.where(
+        is_trading, working_date, np.datetime64("NaT")
     )
-    # extract friday trading dates as a plain numpy datetime64[D] array (skip first placeholder)
+    trading_date_df["trading_date"] = pd.to_datetime(
+        trading_date_df["trading_date"]
+    ).ffill()
     friday_trading_dates = trading_date_df[trading_date_df["is_friday"]][
         "trading_date"
     ].to_numpy(dtype="datetime64[D]")[1:]
@@ -102,7 +106,7 @@ def generate_trading_date(
 
 def calculate_karma_ratio(annual_return: float, max_drawdown: float) -> float:
     if max_drawdown == 0:
-        return np.inf  # 或者返回一个适当的值，如0或None
+        return np.inf
     return annual_return / (-1 * max_drawdown)
 
 
@@ -111,26 +115,6 @@ def curve_analysis(
     date: NDArray[np.datetime64],
     risk_free_rate: float = 0.02,
 ) -> dict[str, float]:
-    """
-    Calculate key performance metrics for a NAV curve.
-
-    Args:
-        nav (np.ndarray): Array of net asset values
-        date (np.ndarray): Array of corresponding dates
-        risk_free_rate (float, optional): Risk-free rate for Sharpe ratio calculation. Defaults to 0.02.
-    Returns:
-        dict: Dictionary containing:
-            - 区间收益率: Total return
-            - 年化收益率: Annualized return
-            - 区间波动率: Period volatility
-            - 年化波动率: Annualized volatility
-            - 夏普比率: Sharpe ratio
-            - 最大回撤: Maximum drawdown
-            - 卡玛比率: Calmar ratio
-
-    Raises:
-        AssertionError: If nav array is invalid (wrong dims, contains NaN, or too short)
-    """
     assert nav.ndim == 1, "nav维度不为1"
     assert np.isnan(nav).sum() == 0, "nav中有nan"
     assert len(nav) > 2, "nav不足两条, 无法计算"
@@ -138,7 +122,6 @@ def curve_analysis(
     result["年化收益率"] = (1 + result["区间收益率"]) ** (
         365 / (date[-1] - date[0]).astype("timedelta64[D]").astype(int)
     ) - 1
-
     rtn = np.log(nav[1:] / nav[:-1])
     result["区间波动率"] = np.std(rtn, ddof=1)
     result["年化波动率"] = result["区间波动率"] * np.sqrt(
