@@ -13,7 +13,6 @@ import warnings
 
 class IntervalReturnETC(NamedTuple):
     """区间收益相关指标"""
-
     name: str
     start_date: np.datetime64
     end_date: np.datetime64
@@ -183,17 +182,13 @@ class NavMetric:
             last_day.astype("datetime64[D]") + np.timedelta64(10, "D"),
         )
         recent_month_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][
-                0
-            ]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][0]
         )
         year_begin_day = np.datetime64(
             weekly_trade_date[weekly_trade_date >= last_day.astype("datetime64[Y]")][0]
         )
         recent_year_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][
-                0
-            ]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][0]
         )
         intervals = [
             IntervalReturnETC("recent_week", last_week_day, last_day),

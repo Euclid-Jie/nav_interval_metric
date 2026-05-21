@@ -22,6 +22,18 @@ def _load_holidays() -> NDArray[np.datetime64]:
             )
     return _chinese_special_holiday
 
+_chinese_special_holiday: Optional[NDArray[np.datetime64]] = None
+
+
+def _load_holidays() -> NDArray[np.datetime64]:
+    global _chinese_special_holiday
+    if _chinese_special_holiday is None:
+        with open(Path(__file__).resolve().parent / "Chinese_special_holiday.txt") as f:
+            _chinese_special_holiday = np.array(
+                [d.strip() for d in f.readlines()], dtype="datetime64[D]"
+            )
+    return _chinese_special_holiday
+
 
 def drawdown_stats(
     nav: np.ndarray, date: np.ndarray
