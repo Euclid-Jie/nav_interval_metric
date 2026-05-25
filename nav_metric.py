@@ -13,6 +13,7 @@ import warnings
 
 class IntervalReturnETC(NamedTuple):
     """区间收益相关指标"""
+
     name: str
     start_date: np.datetime64
     end_date: np.datetime64
@@ -120,7 +121,7 @@ class NavMetric:
         else:
             nav_series = nav_series.dropna()
         self.nav = nav_series.values
-        self.date = nav_series.index.values
+        self.date = nav_series.index.values.astype("datetime64[D]")
         self.begin_date, self.end_date = self.date[0], self.date[-1]
 
     def drawdown_info(self):
@@ -138,8 +139,8 @@ class NavMetric:
             if (
                 interval_item.start_date >= self.begin_date
                 and interval_item.end_date <= self.end_date
-                and interval_item.start_date in self._date_index
-                and interval_item.end_date in self._date_index
+                and interval_item.start_date in self.date
+                and interval_item.end_date in self.date
             ):
                 start_idx = self._date_index[interval_item.start_date]
                 end_idx = self._date_index[interval_item.end_date]
@@ -182,13 +183,17 @@ class NavMetric:
             last_day.astype("datetime64[D]") + np.timedelta64(10, "D"),
         )
         recent_month_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][0]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(30, "D")][
+                0
+            ]
         )
         year_begin_day = np.datetime64(
             weekly_trade_date[weekly_trade_date >= last_day.astype("datetime64[Y]")][0]
         )
         recent_year_day = np.datetime64(
-            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][0]
+            weekly_trade_date[weekly_trade_date >= last_day - np.timedelta64(365, "D")][
+                0
+            ]
         )
         intervals = [
             IntervalReturnETC("recent_week", last_week_day, last_day),
